@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mina Minadura - Juego del Muki Robertico</title>
+    <link rel="stylesheet" th:href="@{styles.css}">
+    <style>
+        .historial-section {
+            margin-top: 20px;
+        }
+
+        .historial-content {
+            background: rgba(0,0,0,0.3);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #8b4513;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .historial-content h4 {
+            color: #ffd700;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+
+        .historial-list {
+            color: #deb887;
+        }
+
+        .movimiento-item {
+            padding: 8px;
+            margin: 5px 0;
+            background: rgba(139, 69, 19, 0.2);
+            border-radius: 4px;
+            border-left: 3px solid #8b4513;
+            font-size: 0.9em;
+        }
+
+        .movimiento-item.bomba {
+            border-left-color: #ff4444;
+            background: rgba(255, 68, 68, 0.1);
+        }
+
+        .movimiento-item.victoria {
+            border-left-color: #4caf50;
+            background: rgba(76, 175, 80, 0.1);
+        }
+
+        .movimiento-item.derrota {
+            border-left-color: #ff0000;
+            background: rgba(255, 0, 0, 0.2);
+        }
+    </style>
+</head>
+<body>
+    <div class="efectos-particulas" id="particulas"></div>
+    
+    <div class="container">
+        <h1>🏔️ Mina Minadura 🏔️</h1>
+        
+        <div class="story">
+            <h3>La Aventura del Muki Robertico</h3>
+            <p>El muki sagrado Robertico ha colocado bombas alrededor del cobre. 
+            ¡Encuentra todo el cobre sin explotar más de 2 bombas para llevarte el tesoro!</p>
+        </div>
+
+        <div class="input-section">
+            <h3>Encuentra todo el cobre para ganar el juego</h3>
+            <div class="coordinate-input">
+                <label for="coordenada">Coordenada a explotar de la mina:</label>
+                <input type="text" id="coordenada" placeholder="Ej: 1 5">
+                <button onclick="explotarCoordenada()" class="btn-explotar">Explotar</button>
+            </div>
+        </div>
+
+        <div class="tablero">
+            <div th:each="fila, filaIndex : ${juego.tablero}" class="fila">
+                <div th:each="celda, celdaIndex : ${fila}" 
+                     class="celda"
+                     th:classappend="${celda.revelada ? 'revelada' : ''} + 
+                                   ${celda.bomba and celda.revelada ? 'bomba' : ''} + 
+                                   ${celda.exploto ? ' exploto' : ''} +
+                                   ${celda.revelada and !celda.bomba and celda.numeroVecinas > 0 ? ' numero-' + celda.numeroVecinas : ''}"
+                     th:data-x="${filaIndex.index}"
+                     th:data-y="${celdaIndex.index}">
+                    <span th:if="${celda.revelada and !celda.bomba and celda.numeroVecinas > 0}" 
+                          th:text="${celda.numeroVecinas}"></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="game-info" style="margin-top: 25px">
+            <div class="intentos">💣 Intentos restantes: <span th:text="${juego.intentosRestantes}">2</span></div>
+            <div class="mensaje" th:class="${juego.juegoTerminado ? (juego.ganado ? 'mensaje victoria' : 'mensaje bomba') : 'mensaje'}"
+                 th:text="${juego.mensaje}">¡Busca el cobre con cuidado!</div>
+        </div>
+
+        <div class="botones">
+            <form th:action="@{/buscaminas/reiniciar}" method="post" style="display: inline;">
+                <button type="submit" class="btn">🔄 Nuevo Juego</button>
+            </form>
+        </div>
+
+        <div class="historial-section" style="margin-top: 20px;">
+            <button onclick="toggleHistorial()" class="btn">📜 Ver Historial de Movimientos</button>
+            <div id="historial-container" style="display: none; margin-top: 15px;">
+                <div class="historial-content">
+                    <h4>Historial de Movimientos</h4>
+                    <div id="historial-list" class="historial-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function explotarCoordenada() {
+            const input = document.getElementById('coordenada');
+            const coordenada = input.value.trim();
+
+            if (!coordenada) {
+                alert('Por favor, ingrese una coordenada válida (Ej: 1 5)');
+                return;
+            }
+
+            const partes = coordenada.split(/\s+/);
+            if (partes.length !== 2) {
+                alert('Formato incorrecto. Use el formato: fila columna (Ej: 1 5)');
+                return;
+            }
+
+            const x = parseInt(partes[0]) - 1; // Convertir a índice base 0
+            const y = parseInt(partes[1]) - 1; // Convertir a índice base 0
+
+            if (isNaN(x) || isNaN(y)) {
+                alert('Las coordenadas deben ser números válidos');
+                return;
+            }
+
+            // Verificar que las coordenadas estén dentro del rango
+            const maxX = document.querySelectorAll('.fila').length;
+            const maxY = document.querySelectorAll('.fila')[0].children.length;
+
+            if (x < 0 || x >= maxX || y < 0 || y >= maxY) {
+                alert(`Las coordenadas deben estar entre 1-${maxX} y 1-${maxY}`);
+                return;
+            }
+
+            // Verificar si la celda ya está revelada
+            const celda = document.querySelector('.celda[data-x="' + x + '"][data-y="' + y + '"]');
+            if (celda.classList.contains('revelada')) {
+                alert('Esta casilla ya ha sido explorada');
+                return;
+            }
+
+            // Limpiar el input
+            input.value = '';
+
+            // Realizar la petición AJAX
+            fetch('/buscaminas/click', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: 'x=' + x + '&y=' + y
+            })
+                .then(response => response.json())
+                .then(data => {
+                    actualizarTablero(data);
+                    actualizarInfo(data);
+
+                    if (data.juegoTerminado) {
+                        document.getElementById('coordenada').disabled = true;
+                        document.querySelector('.btn-explotar').disabled = true;
+
+                        if (data.ganado) {
+                            crearEfectoVictoria();
+                        } else {
+                            crearEfectoExplosion();
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error al procesar la coordenada. Intente nuevamente.');
+                });
+        }
+
+        // Permitir usar Enter en el campo de coordenadas
+        document.addEventListener('DOMContentLoaded', function () {
+            const input = document.getElementById('coordenada');
+            if (input) {
+                input.addEventListener('keypress', function (e) {
+                    if (e.key === 'Enter') {
+                        explotarCoordenada();
+                    }
+                });
+
+                // Verificar si el juego ya terminó
+                const mensajeElement = document.querySelector('.mensaje');
+                if (mensajeElement && (mensajeElement.classList.contains('victoria') || mensajeElement.classList.contains('bomba'))) {
+                    input.disabled = true;
+                    document.querySelector('.btn-explotar').disabled = true;
+                }
+            }
+        });
+
+        function actualizarTablero(juego) {
+            for (let x = 0; x < juego.dimX; x++) {
+                for (let y = 0; y < juego.dimY; y++) {
+                    const celda = document.querySelector('.celda[data-x="' + x + '"][data-y="' + y + '"]');
+                    const celdaData = juego.tablero[x][y];
+
+                    if (celdaData.revelada) {
+                        celda.classList.add('revelada');
+
+                        if (celdaData.bomba) {
+                            celda.classList.add('bomba');
+                            if (celdaData.exploto) {
+                                celda.classList.add('exploto');
+                            }
+                        } else if (celdaData.numeroVecinas > 0) {
+                            celda.classList.add('numero-' + celdaData.numeroVecinas);
+                            celda.innerHTML = '<span>' + celdaData.numeroVecinas + '</span>';
+                        }
+                    }
+                }
+            }
+        }
+
+        function actualizarInfo(juego) {
+            document.querySelector('.intentos span').textContent = juego.intentosRestantes;
+            const mensajeElement = document.querySelector('.mensaje');
+            mensajeElement.textContent = juego.mensaje;
+
+            mensajeElement.className = 'mensaje';
+            if (juego.juegoTerminado) {
+                if (juego.ganado) {
+                    mensajeElement.classList.add('victoria');
+                } else {
+                    mensajeElement.classList.add('bomba');
+                }
+            }
+        }
+
+        function crearEfectoVictoria() {
+            for (let i = 0; i < 20; i++) {
+                setTimeout(() => {
+                    const particula = document.createElement('div');
+                    particula.className = 'particula';
+                    particula.style.left = Math.random() * 100 + '%';
+                    particula.style.animationDelay = Math.random() * 2 + 's';
+                    particula.style.background = '#' + Math.floor(Math.random() * 16777215).toString(16);
+                    document.getElementById('particulas').appendChild(particula);
+
+                    setTimeout(() => {
+                        particula.remove();
+                    }, 6000);
+                }, i * 100);
+            }
+        }
+
+        function crearEfectoExplosion() {
+            document.body.style.animation = 'shake 0.5s ease-in-out 3';
+            setTimeout(() => {
+                document.body.style.animation = '';
+            }, 1500);
+        }
+
+        // Efecto de partículas de fondo
+        setInterval(() => {
+            if (document.querySelectorAll('.particula').length < 5) {
+                const particula = document.createElement('div');
+                particula.className = 'particula';
+                particula.style.left = Math.random() * 100 + '%';
+                particula.style.animationDelay = '0s';
+                document.getElementById('particulas').appendChild(particula);
+
+                setTimeout(() => {
+                    particula.remove();
+                }, 6000);
+            }
+        }, 2000);
+
+        function toggleHistorial() {
+            const container = document.getElementById('historial-container');
+            if (container.style.display === 'none') {
+                cargarHistorial();
+                container.style.display = 'block';
+            } else {
+                container.style.display = 'none';
+            }
+        }
+
+        function cargarHistorial() {
+            fetch('/buscaminas/historial')
+                .then(response => response.json())
+                .then(data => {
+                    const historialList = document.getElementById('historial-list');
+                    if (data.length === 0) {
+                        historialList.innerHTML = '<p>No hay movimientos registrados.</p>';
+                        return;
+                    }
+                    
+                    let html = '';
+                    data.forEach(movimiento => {
+                        const fecha = new Date(movimiento.fechaMovimiento).toLocaleString();
+                        const coordenadas = `(${movimiento.coordenadaX}, ${movimiento.coordenadaY})`;
+                        const bombaIcon = movimiento.esBomba ? '💣' : (movimiento.numeroVecinas > 0 ? movimiento.numeroVecinas : '🔶');
+                        
+                        html += `
+                            <div class="movimiento-item ${movimiento.resultado.toLowerCase()}">
+                                <strong>Movimiento ${movimiento.numeroMovimiento}:</strong> 
+                                Coordenada ${coordenadas} - ${bombaIcon} 
+                                <span style="color: #888; font-size: 0.8em;">(${fecha})</span>
+                                <br><em>Resultado: ${movimiento.resultado}</em>
+                            </div>
+                        `;
+                    });
+                    historialList.innerHTML = html;
+                })
+                .catch(error => {
+                    console.error('Error al cargar historial:', error);
+                    document.getElementById('historial-list').innerHTML = '<p>Error al cargar el historial.</p>';
+                });
+        }
+    </script>
+</body>
+</html>
